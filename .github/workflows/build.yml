@@ -13,10 +13,17 @@ on:
 env:
   MICROCHIP_DOWNLOAD_LOCATION: https://thethingsproducts.blob.core.windows.net/the-things-gateway/ci
 
+  BUCKET_NAME: "gateway-test-kickstartergateways3bucket-1lcb7704s8js"
+  AWS_REGION: "us-east-1"
+  AWS_ROLE: "arn:aws:iam::368443094578:role/GitHubActions_TheThingsProducts-gateway"
+
 jobs:
   build:
     name: Build
     runs-on: ubuntu-18.04
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out code
         uses: actions/checkout@v2
@@ -36,12 +43,18 @@ jobs:
       - name: Extract the name
         id: extract_name
         run: echo ::set-output name=NAME::${GITHUB_REF#refs/*/}
-      - name: Upload to Azure Storage
-        env:
-          AZURE_STORAGE_ACCOUNT: '${{ secrets.AZURE_STORAGE_ACCOUNT }}'
-          AZURE_STORAGE_KEY: '${{ secrets.AZURE_STORAGE_KEY }}'
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: "${{ env.AWS_REGION }}"
+          role-to-assume: "${{ env.AWS_ROLE }}"
+          role-session-name: GitHubActions_TheThingsProduct-gateway-build
+      - name: Upload to AWS S3
         run: |
-          az storage blob upload --overwrite --container-name the-things-gateway --name "v1/${{ steps.extract_name.outputs.NAME }}/firmware.hex" --file "./firmware/firmware.hex"
-          az storage blob upload --overwrite --container-name the-things-gateway --name "v1/${{ steps.extract_name.outputs.NAME }}/firmware-with-bootloader.hex" --file "./firmware/firmware-with-bootloader.hex"
-          az storage blob upload --overwrite --container-name the-things-gateway --name "v1/${{ steps.extract_name.outputs.NAME }}/checksums" --file "./firmware/checksums"
-          az storage blob upload --overwrite --container-name the-things-gateway --name "v1/${{ steps.extract_name.outputs.NAME }}/disassembly.txt" --file "./firmware/disassembly.txt"
+          ls ./firmware
+          for file in ${FILES}; do
+            aws s3 cp "./firmware/${file}" "${BUCKET}/${file}"
+          done
+        env:
+          FILES: "firmware.hex firmware-with-bootloader.hex checksums disassembly.txt"
+          BUCKET: "s3://${{ env.BUCKET_NAME }}/v1/${{ steps.extract_name.outputs.NAME }}"
